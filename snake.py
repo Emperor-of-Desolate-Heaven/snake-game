@@ -2,7 +2,7 @@
 """贪吃蛇 —— 使用 Python 标准库 turtle，无需安装任何依赖。
 
 操作：方向键 / WASD 控制移动，空格暂停，Esc 打开暂停菜单（↑↓ 或鼠标选择，Enter 确认）；
-撞墙或撞到自己身体后弹出失败菜单，可选择重新开始或退出。
+E 选择难度（简单/普通/困难三档速度）；撞墙或撞到自己身体后弹出失败菜单，可选择重新开始或退出。
 """
 import turtle
 import random
@@ -10,7 +10,12 @@ import random
 # 游戏设置
 GRID = 20          # 每个格子的大小（像素）
 WIDTH, HEIGHT = 30, 22   # 场地格子数
-SPEED = 0.2        # 每步间隔（秒），越小越快
+DIFF_NAMES = ("简单", "普通", "困难")
+SPEEDS = (0.3, 0.2, 0.1)     # 三档难度对应的每步间隔（秒），越小越快
+
+# 当前难度与速度（按 E 可切换）
+difficulty = 1                # 0 简单 / 1 普通 / 2 困难
+speed = SPEEDS[difficulty]    # 当前每步间隔（秒）
 
 # 窗口与画笔
 screen = turtle.Screen()
@@ -30,8 +35,9 @@ direction = (1, 0)                    # 当前移动方向
 food = None
 score = 0
 paused = False
-menu_open = False     # 暂停菜单是否打开
-selected = 0          # 菜单当前选中项（0/1/2）
+menu_open = False        # 菜单是否打开
+difficulty_menu = False  # 难度选择菜单是否打开
+selected = 0             # 菜单当前选中项
 running = True
 
 
@@ -82,7 +88,7 @@ def handle_space():
             # 在画面左下角提示已暂停
             pen.goto(-WIDTH * GRID // 2 + 10, -HEIGHT * GRID // 2 + 10)
             pen.color("white")
-            pen.write("已暂停（空格继续，Esc 菜单）", font=("Microsoft YaHei", 12, "normal"))
+            pen.write("已暂停（空格继续，Esc 菜单，E 难度）", font=("Microsoft YaHei", 12, "normal"))
             screen.update()
     else:
         reset()
@@ -123,7 +129,8 @@ def draw():
         draw_rect(food[0], food[1], "#e0524e")
     pen.goto(-WIDTH * GRID // 2 + 10, HEIGHT * GRID // 2 - 5)
     pen.color("white")
-    pen.write(f"分数: {score}   空格=暂停", font=("Microsoft YaHei", 14, "normal"))
+    pen.write(f"分数: {score}   难度: {DIFF_NAMES[difficulty]}   空格=暂停  E=难度",
+              font=("Microsoft YaHei", 14, "normal"))
     screen.update()
 
 
@@ -138,13 +145,14 @@ def game_over():
 
 
 def reset():
-    """重新开始一局。"""
-    global snake, direction, food, score, paused, menu_open, selected, running
+    """重新开始一局（保留当前难度设置）。"""
+    global snake, direction, food, score, paused, menu_open, difficulty_menu, selected, running
     snake = [(WIDTH // 2, HEIGHT // 2)]
     direction = (1, 0)
     score = 0
     paused = False
     menu_open = False
+    difficulty_menu = False
     selected = 0
     running = True
     spawn_food()
@@ -155,13 +163,18 @@ MENU_ITEMS = ("继续游戏", "重新开始", "退出游戏")
 MENU_ITEM_Y = (50, 12, -26)          # 暂停菜单三个选项的 y 坐标
 GAMEOVER_ITEMS = ("重新开始", "退出游戏")
 GAMEOVER_ITEM_Y = (12, -26)          # 失败菜单两个选项的 y 坐标
+DIFF_ITEM_Y = (50, 12, -26)          # 难度菜单三个选项的 y 坐标
 
 
 def active_menu():
     """当前菜单的内容：(标题, 副标题, 选项列表, 选项 y 坐标)。"""
-    if running:
-        return "暂停", None, MENU_ITEMS, MENU_ITEM_Y
-    return "你失败", "得分：%d" % score, GAMEOVER_ITEMS, GAMEOVER_ITEM_Y
+    if not running:
+        return "你失败", "得分：%d" % score, GAMEOVER_ITEMS, GAMEOVER_ITEM_Y
+    if difficulty_menu:
+        items = tuple(d + ("（当前）" if i == difficulty else "")
+                      for i, d in enumerate(DIFF_NAMES))
+        return "选择难度", None, items, DIFF_ITEM_Y
+    return "暂停", None, MENU_ITEMS, MENU_ITEM_Y
 
 
 def draw_menu():
@@ -187,15 +200,21 @@ def draw_menu():
                   align="center", font=("Microsoft YaHei", 15, "normal"))
     pen.goto(0, -66)
     pen.color("#9e9e9e")
-    hint = "↑↓ 选择   Enter 确认   Esc 关闭" if running else "↑↓ 选择   Enter 确认   Esc 退出"
+    if difficulty_menu:
+        hint = "↑↓ 选择   Enter 确认   Esc 取消"
+    elif running:
+        hint = "↑↓ 选择   Enter 确认   Esc 关闭"
+    else:
+        hint = "↑↓ 选择   Enter 确认   Esc 退出"
     pen.write(hint, align="center", font=("Microsoft YaHei", 11, "normal"))
     screen.update()
 
 
 def close_menu():
     """关闭菜单并继续游戏。"""
-    global paused, menu_open
+    global paused, menu_open, difficulty_menu
     menu_open = False
+    difficulty_menu = False
     paused = False
     draw()
 
@@ -203,6 +222,10 @@ def close_menu():
 def confirm_menu(i):
     """执行菜单第 i 项（仅菜单打开时有效）。"""
     if not menu_open:
+        return
+    if difficulty_menu:   # 难度菜单：选中即设定并关闭
+        set_difficulty(i)
+        close_menu()
         return
     if running:      # 暂停菜单：0 继续，1 重开，2 退出
         if i == 0:
@@ -216,6 +239,25 @@ def confirm_menu(i):
             reset()
         else:
             screen.bye()
+
+
+def set_difficulty(i):
+    """设置难度档位并更新移动速度。"""
+    global difficulty, speed
+    difficulty = i
+    speed = SPEEDS[i]
+
+
+def open_difficulty_menu():
+    """E：游戏中打开难度选择菜单。"""
+    global menu_open, paused, selected, difficulty_menu
+    if not running or menu_open:   # 仅在正常游戏中生效
+        return
+    difficulty_menu = True
+    menu_open = True
+    paused = True
+    selected = difficulty          # 高亮当前难度
+    draw_menu()
 
 
 def toggle_menu():
@@ -282,6 +324,8 @@ screen.onkey(lambda: handle_arrow((-1, 0)), "a")
 screen.onkey(lambda: handle_arrow((1, 0)), "d")
 screen.onkey(handle_space, "space")
 screen.onkey(toggle_menu, "Escape")
+screen.onkey(open_difficulty_menu, "e")
+screen.onkey(open_difficulty_menu, "E")
 screen.onkey(lambda: confirm_menu(0), "1")          # 数字键快捷方式
 screen.onkey(lambda: confirm_menu(1), "2")
 screen.onkey(lambda: confirm_menu(2), "3")
@@ -299,8 +343,8 @@ def game_loop():
         step()
         if not menu_open:    # 撞自己刚结束时失败菜单已画好，别再重绘覆盖
             draw()
-    screen.ontimer(game_loop, int(SPEED * 1000))
+    screen.ontimer(game_loop, int(speed * 1000))   # 按当前难度速度推进
 
 
-screen.ontimer(game_loop, int(SPEED * 1000))
+screen.ontimer(game_loop, int(speed * 1000))
 screen.mainloop()
